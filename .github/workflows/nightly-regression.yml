@@ -1,0 +1,84 @@
+name: Nightly Regression Test Suite
+
+on:
+  # 1. Scheduled trigger: Runs every night at 20:00 UTC (01:30 AM IST) Monday through Friday
+  schedule:
+    - cron: '0 20 * * 1-5'
+
+  # 2. Manual trigger: Allows triggering from GitHub Actions web UI anytime
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'Suite to execute'
+        required: true
+        default: 'regression'
+        type: choice
+        options:
+          - 'regression'
+          - 'smoke'
+          - 'all'
+      browser:
+        description: 'Browser Project'
+        required: true
+        default: 'all-browsers'
+        type: choice
+        options:
+          - 'all-browsers'
+          - 'chromium'
+          - 'firefox'
+          - 'webkit'
+
+jobs:
+  nightly-tests:
+    name: Nightly Test Execution
+    timeout-minutes: 90
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'npm'
+
+      - name: Install Project Dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers with OS Dependencies
+        run: npx playwright install --with-deps
+
+      - name: Run Nightly Regression Suite
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.event.inputs.test_suite }}" = "smoke" ]; then
+              npm run test:smoke
+            elif [ "${{ github.event.inputs.test_suite }}" = "regression" ]; then
+              npm run test:regression
+            else
+              npx playwright test
+            fi
+          else
+            # Default scheduled nightly run: full regression
+            npm run test:regression
+          fi
+        env:
+          CI: true
+
+      - name: Upload Playwright HTML Report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: nightly-playwright-report-${{ github.run_id }}
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload Test Results & Failure Traces
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: failed-test-results-${{ github.run_id }}
+          path: test-results/
+          retention-days: 7
