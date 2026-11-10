@@ -9,10 +9,19 @@ export const VALID_CREDENTIALS: TestCredentials = {
 };
 
 /**
+ * Invalid test credentials for negative testing.
+ */
+export const INVALID_CREDENTIALS: TestCredentials = {
+  username: 'invalid_user_99999',
+  password: 'WrongPassword123!',
+};
+
+/**
  * CREDENTIALS object used by login tests.
  */
 export const CREDENTIALS = {
   VALID_USER: VALID_CREDENTIALS,
+  INVALID_USER: INVALID_CREDENTIALS,
 };
 
 /**

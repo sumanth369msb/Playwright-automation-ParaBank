@@ -47,6 +47,7 @@ npm run test:headed
 | Command | Description |
 |---------|-------------|
 | `npm test` | Run all tests |
+| `npm run test:api` | Run comprehensive REST API test suite |
 | `npm run test:smoke` | Run smoke tests only |
 | `npm run test:regression` | Run regression suite |
 | `npm run test:chromium` | Run on Chromium only |
@@ -58,6 +59,20 @@ npm run test:headed
 | `npm run test:accounts` | Run account tests |
 | `npm run test:transfers` | Run transfer tests |
 | `npm run test:e2e` | Run end-to-end workflows |
+
+### 🔌 REST API Test Automation Commands
+
+| Command | Suite | Description |
+|---|---|---|
+| `npm run test:api` | All API | Runs full ParaBank REST API test suite |
+| `npm run test:api:auth` | Auth | Positive, negative & SQL injection tests |
+| `npm run test:api:customers` | Customers | Profile retrieval & update verification |
+| `npm run test:api:accounts` | Accounts | Portfolios, balances, Checking & Savings creation |
+| `npm run test:api:transfers` | Transfers | Transfers, deposits, withdrawals & bill pay |
+| `npm run test:api:transactions` | Transactions | Search by date, date range, amount & month/type |
+| `npm run test:api:loans` | Loans | Loan approval & denial business rule validation |
+| `npm run test:api:admin` | Admin/DB | CleanDB, InitializeDB & idempotency testing |
+| `npm run test:api:e2e` | E2E API | Complete 9-step business integration flow |
 
 ## 🔀 Sharding (for CI/CD)
 

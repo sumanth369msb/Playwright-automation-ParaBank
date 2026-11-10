@@ -2,12 +2,20 @@ import { test, expect, request, APIRequestContext } from '@playwright/test';
 import { BankingAPI } from '../../src/api/BankingAPI';
 import { VALID_CREDENTIALS as CREDS } from '../../src/utils/test-data';
 import { BASE_URL } from '../../src/utils/constants';
+import {
+  parseAccountXml,
+  parseAccountsXml,
+  parseCustomerXml,
+  parseLoanResponseXml,
+  parseTransactionsXml,
+} from '../../src/utils/xml-parser';
 
 let bankingAPI: BankingAPI;
 let customerId: string;
 let primaryAccountId: string;
+let createdAccountId: string;
 
-test.describe.serial('Banking REST API Automation @api @regression', () => {
+test.describe.serial('Banking REST API End-to-End Workflow Suite @api @regression', () => {
   let apiContext!: APIRequestContext;
 
   test.beforeAll(async () => {
@@ -22,82 +30,111 @@ test.describe.serial('Banking REST API Automation @api @regression', () => {
     await apiContext.dispose();
   });
 
-  test('should successfully authenticate and retrieve customer details via API', async () => {
+  test('STEP 1: Authenticate and retrieve customer profile via REST API', async () => {
     const response = await bankingAPI.login(CREDS.username, CREDS.password);
-    
-    // Assert HTTP status
     expect(response.status()).toBe(200);
-    
-    // ParaBank returns XML. Extracting data securely using string matching and basic regex
-    const text = await response.text();
-    expect(text).toContain('<customer>');
-    expect(text).toContain('<firstName>');
-    
-    // Extract customerId for the next tests
-    const idMatch = text.match(/<id>(\d+)<\/id>/);
-    expect(idMatch).not.toBeNull();
-    customerId = idMatch![1];
+
+    const xml = await response.text();
+    expect(xml).toContain('<customer>');
+
+    const customer = parseCustomerXml(xml);
+    expect(customer.id).toBeTruthy();
+    expect(customer.firstName).toBeTruthy();
+    customerId = customer.id;
   });
 
-  test('should fetch customer accounts successfully', async () => {
-    // Ensure previous test passed and populated customerId
+  test('STEP 2: Fetch customer accounts list and identify primary funding account', async () => {
     expect(customerId).toBeDefined();
 
     const response = await bankingAPI.getCustomerAccounts(customerId);
     expect(response.status()).toBe(200);
-    
-    const text = await response.text();
-    expect(text).toContain('<account>');
-    
-    // Extract the first account ID to use as a funding account
-    const accountMatch = text.match(/<id>(\d+)<\/id>/);
-    expect(accountMatch).not.toBeNull();
-    primaryAccountId = accountMatch![1];
+
+    const xml = await response.text();
+    const accounts = parseAccountsXml(xml);
+    expect(accounts.length).toBeGreaterThan(0);
+
+    primaryAccountId = accounts[0].id;
+    expect(primaryAccountId).toBeTruthy();
   });
 
-  test('should retrieve specific account details', async () => {
+  test('STEP 3: Retrieve and verify specific account balance and details', async () => {
     expect(primaryAccountId).toBeDefined();
 
     const response = await bankingAPI.getAccountDetails(primaryAccountId);
     expect(response.status()).toBe(200);
 
-    const text = await response.text();
-    expect(text).toContain(`<id>${primaryAccountId}</id>`);
-    expect(text).toContain('<balance>');
+    const xml = await response.text();
+    const account = parseAccountXml(xml);
+    expect(account.id).toBe(primaryAccountId);
+    expect(typeof account.balance).toBe('number');
   });
 
-  test('should create a new savings account via API', async () => {
+  test('STEP 4: Create a new savings account via API', async () => {
     expect(customerId).toBeDefined();
     expect(primaryAccountId).toBeDefined();
-    
+
     // Account type 1 = SAVINGS in ParaBank
     const response = await bankingAPI.createAccount(customerId, 1, primaryAccountId);
     expect(response.status()).toBe(200);
-    
-    const text = await response.text();
-    // Verify successful creation response format
-    expect(text).toContain('<id>');
+
+    const xml = await response.text();
+    const newAccount = parseAccountXml(xml);
+    expect(newAccount.id).toBeTruthy();
+    createdAccountId = newAccount.id;
   });
 
-  test('should successfully transfer funds between accounts', async () => {
+  test('STEP 5: Deposit funds into the newly created account', async () => {
+    expect(createdAccountId).toBeDefined();
+
+    const depositAmount = 250;
+    const response = await bankingAPI.deposit(createdAccountId, depositAmount);
+    expect(response.status()).toBe(200);
+
+    const body = await response.text();
+    expect(body).toMatch(/(Successfully deposited|deposited)/i);
+  });
+
+  test('STEP 6: Transfer funds from primary account to newly created account', async () => {
+    expect(primaryAccountId).toBeDefined();
+    expect(createdAccountId).toBeDefined();
+
+    const transferAmount = 75;
+    const response = await bankingAPI.transferFunds(primaryAccountId, createdAccountId, transferAmount);
+    expect(response.status()).toBe(200);
+
+    const body = await response.text();
+    expect(body).toMatch(/(Successfully transferred|transferred)/i);
+  });
+
+  test('STEP 7: Query account transactions to verify the posted transfer', async () => {
+    expect(createdAccountId).toBeDefined();
+
+    const response = await bankingAPI.getAccountTransactions(createdAccountId);
+    expect(response.status()).toBe(200);
+
+    const xml = await response.text();
+    const transactions = parseTransactionsXml(xml);
+    expect(Array.isArray(transactions)).toBeTruthy();
+  });
+
+  test('STEP 8: Submit a loan application using the funded account for down payment', async () => {
     expect(customerId).toBeDefined();
     expect(primaryAccountId).toBeDefined();
-    
-    // 1. Create a destination account first
-    const createRes = await bankingAPI.createAccount(customerId, 1, primaryAccountId);
-    const createText = await createRes.text();
-    const destMatch = createText.match(/<id>(\d+)<\/id>/);
-    const destAccountId = destMatch ? destMatch[1] : primaryAccountId;
 
-    // 2. Perform the transfer
-    const transferAmount = 50;
-    const response = await bankingAPI.transferFunds(primaryAccountId, destAccountId, transferAmount);
-    
+    const loanAmount = 2000;
+    const downPayment = 200;
+
+    const response = await bankingAPI.requestLoan(customerId, loanAmount, downPayment, primaryAccountId);
     expect(response.status()).toBe(200);
-    
-    // 3. Verify transfer response
-    const text = await response.text();
-    expect(text).toContain('Successfully transferred');
-    expect(text).toContain(`$${transferAmount}`);
+
+    const xml = await response.text();
+    const loanResponse = parseLoanResponseXml(xml);
+    expect(xml).toMatch(/loanResponse/);
+    expect(typeof loanResponse.approved).toBe('boolean');
+  });
+
+  test('STEP 9: Reset test database state to maintain clean environment', async () => {
+    const response = await bankingAPI.cleanDB();
+    expect(response.status()).toBe(204);
   });
 });

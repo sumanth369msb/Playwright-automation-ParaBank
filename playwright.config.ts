@@ -29,8 +29,9 @@ export default defineConfig({
   /* Retry failed tests — more retries on CI for flakiness */
   retries: process.env.CI ? 2 : 1,
 
-  /* Parallel workers — scale based on environment */
-  workers: process.env.CI ? 4 : undefined,
+  /* Parallel workers: defaults to 1 to prevent Cloudflare 1015 IP rate-limiting on ParaBank,
+     or scales via WORKERS env var / CLI --workers flag (e.g. WORKERS=8 or --workers=8) */
+  workers: process.env.WORKERS ? parseInt(process.env.WORKERS, 10) : 1,
 
   /* Folder for test artifacts such as screenshots, videos, traces */
   outputDir: 'test-results',
@@ -146,6 +147,13 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
       grep: /@regression/,
       dependencies: ['setup'],
+    },
+
+    /* ========== Dedicated REST API Project ========== */
+    {
+      name: 'api',
+      testDir: './tests/api',
+      testMatch: /.*\.spec\.ts/,
     },
   ],
 
